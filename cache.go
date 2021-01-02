@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -18,12 +17,6 @@ type Config struct {
 	BlockSize int64
 }
 
-type Cache struct {
-	config     *Config
-	files      map[string]*File
-	filesMutex *sync.Mutex
-}
-
 type Block struct {
 	mapped  []byte
 	written int64
@@ -32,10 +25,9 @@ type Block struct {
 }
 
 type File struct {
-	config      *Config
-	name        string
 	pathToFile  string
 	size        int64
+	blockSize   int64
 	blocks      []*Block
 	fetcher     func(start int64, end int64) (io.ReadCloser, error)
 	failedBlock int32 // defaults to -1, set to the block number of a permanently failed block.
@@ -46,23 +38,11 @@ type File struct {
 	mutex       *sync.RWMutex
 }
 
-func (c *Cache) OpenFile(name string, fetcher func(start int64, end int64) (io.ReadCloser, error), size int64) (*File, error) {
-	c.filesMutex.Lock()
-	file, found := c.files[name]
-	if found {
-		c.filesMutex.Unlock()
-		err := file.allocate()
-		if err != nil {
-			return nil, err
-		}
-
-		return file, nil
-	}
-
-	file = &File{
-		name:        name,
-		config:      c.config,
+func Open(pathToFile string, blockSize int64, fetcher func(start int64, end int64) (io.ReadCloser, error), size int64) (*File, error) {
+	file := &File{
+		pathToFile:  pathToFile,
 		size:        size,
+		blockSize:   blockSize,
 		fetcher:     fetcher,
 		failedBlock: -1,
 		allocated:   new(sync.Once),
@@ -71,9 +51,6 @@ func (c *Cache) OpenFile(name string, fetcher func(start int64, end int64) (io.R
 		mapping:     nil,
 		handle:      nil,
 	}
-
-	c.files[name] = file
-	c.filesMutex.Unlock()
 
 	err := file.allocate()
 	if err != nil {
@@ -106,18 +83,17 @@ func (b *Block) Bytes() []byte {
 func (f *File) allocate() error {
 	f.allocated.Do(func() {
 		// allocate the file
-		f.pathToFile = filepath.Join(f.config.CachePath, f.name)
 		var err error
 		f.handle, err = os.Create(f.pathToFile)
 		if err != nil {
-			f.mapError = fmt.Errorf("mediacache: failed to create file %q: %w", f.name, err)
+			f.mapError = fmt.Errorf("mediacache: failed to create file %q: %w", f.pathToFile, err)
 			return
 		}
 
 		err = f.handle.Truncate(f.size)
 		if err != nil {
 			f.handle.Close()
-			f.mapError = fmt.Errorf("mediacache: failed to allocate file %q: %w", f.name, err)
+			f.mapError = fmt.Errorf("mediacache: failed to allocate file %q: %w", f.pathToFile, err)
 			os.Remove(f.pathToFile)
 			return
 		}
@@ -125,28 +101,28 @@ func (f *File) allocate() error {
 		mapping, err := mmap.Map(f.handle, mmap.RDWR, 0)
 		if err != nil {
 			f.handle.Close()
-			f.mapError = fmt.Errorf("mediacache: failed to map file %q: %w", f.name, err)
+			f.mapError = fmt.Errorf("mediacache: failed to map file %q: %w", f.pathToFile, err)
 			os.Remove(f.pathToFile)
 			return
 		}
 
 		f.mapping = &mapping
 
-		numBlocks := f.size / f.config.BlockSize
-		if f.size%f.config.BlockSize != 0 {
+		numBlocks := f.size / f.blockSize
+		if f.size%f.blockSize != 0 {
 			numBlocks++
 		}
 
 		f.blocks = make([]*Block, numBlocks)
 
 		for i := range f.blocks {
-			upper := (int64(i) + 1) * f.config.BlockSize
+			upper := (int64(i) + 1) * f.blockSize
 			if upper > f.size {
 				upper = f.size
 			}
 
 			f.blocks[i] = &Block{
-				mapped:  mapping[int64(i)*f.config.BlockSize : upper],
+				mapped:  mapping[int64(i)*f.blockSize : upper],
 				written: 0,
 				once:    new(sync.Once),
 				err:     nil,
@@ -199,8 +175,8 @@ func (f *File) fetchBlock(blockID int64) {
 attemptLoop:
 	for attempt := 0; attempt < 3; attempt++ {
 		var rd io.ReadCloser
-		rd, lastError = f.fetcher(blockID*f.config.BlockSize+block.written,
-			blockID*f.config.BlockSize+int64(len(block.mapped)))
+		rd, lastError = f.fetcher(blockID*f.blockSize+block.written,
+			blockID*f.blockSize+int64(len(block.mapped)))
 		if lastError != nil {
 			time.Sleep(time.Second * 3)
 			continue
@@ -228,13 +204,5 @@ attemptLoop:
 		block.err = errors.New("mediacache: ran out of attempts, unknown failure")
 	} else {
 		block.err = lastError
-	}
-}
-
-func NewCache(config *Config) *Cache {
-	return &Cache{
-		config:     config,
-		files:      make(map[string]*File),
-		filesMutex: new(sync.Mutex),
 	}
 }

@@ -8,12 +8,7 @@ import (
 )
 
 func TestCache(t *testing.T) {
-	cache := NewCache(&Config{
-		BlockSize: 1024,
-		CachePath: "./",
-	})
-
-	f, err := cache.OpenFile("output.txt", func(start, end int64) (io.ReadCloser, error) {
+	f, err := Open("./output.txt", 1024, func(start, end int64) (io.ReadCloser, error) {
 		f, err := os.Open("./test.txt")
 		if err != nil {
 			return nil, err
