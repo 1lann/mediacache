@@ -96,7 +96,7 @@ func (f *File) Remove() error {
 		return err2
 	}
 
-	return nil
+	return os.Remove(f.pathToFile)
 }
 
 func (b *Block) Bytes() []byte {
@@ -177,7 +177,7 @@ func (f *File) IsFailed() error {
 
 func (f *File) GetBlock(blockID int64) (*Block, error) {
 	if blockID >= int64(len(f.blocks)) {
-		return nil, fmt.Errorf("mediacache: blockID out of bounds")
+		return nil, errors.New("mediacache: blockID out of bounds")
 	}
 
 	block := f.blocks[blockID]

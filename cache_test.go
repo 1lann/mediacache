@@ -13,8 +13,8 @@ func TestCache(t *testing.T) {
 		CachePath: "./",
 	})
 
-	f, err := cache.OpenFile("test.txt", func(start, end int64) (io.ReadCloser, error) {
-		f, err := os.Open("./kiddo.txt")
+	f, err := cache.OpenFile("output.txt", func(start, end int64) (io.ReadCloser, error) {
+		f, err := os.Open("./test.txt")
 		if err != nil {
 			return nil, err
 		}
@@ -54,15 +54,10 @@ func TestCache(t *testing.T) {
 
 	fmt.Println(string(blk.Bytes()))
 
-	blk, err = f.GetBlock(5)
-	if err != nil {
-		t.Fatalf("failed to get block: %v", err)
-	}
-
 	_ = blk
 
-	// err = f.Remove()
-	// if err != nil {
-	// 	t.Fatalf("failed to remove file: %v", err)
-	// }
+	err = f.Remove()
+	if err != nil {
+		t.Fatalf("failed to remove file: %v", err)
+	}
 }
