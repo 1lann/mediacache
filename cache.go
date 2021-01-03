@@ -214,6 +214,7 @@ attemptLoop:
 			n, lastError = rd.Read(block.mapped[offset:])
 			block.written += int64(n)
 			if lastError != nil {
+				rd.Close()
 				time.Sleep(time.Second * 3)
 				continue attemptLoop
 			}
@@ -222,6 +223,7 @@ attemptLoop:
 		}
 
 		block.err = nil
+		rd.Close()
 
 		return
 	}
