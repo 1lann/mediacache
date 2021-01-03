@@ -22,6 +22,7 @@ type Block struct {
 	written int64
 	once    *sync.Once
 	err     error
+	mutex   *sync.RWMutex
 }
 
 type File struct {
@@ -64,8 +65,15 @@ func (f *File) Remove() error {
 	f.mutex.Lock()
 	err1 := f.mapping.Unmap()
 	err2 := f.handle.Close()
-	f.mapError = fmt.Errorf("mediacache: file closed")
+	f.mapError = errors.New("mediacache: file closed")
 	f.mutex.Unlock()
+
+	for _, block := range f.blocks {
+		block.mutex.Lock()
+		block.mapped = nil
+		block.err = errors.New("mediacache: file closed")
+		block.mutex.Unlock()
+	}
 
 	if err1 != nil {
 		return err1
@@ -76,8 +84,15 @@ func (f *File) Remove() error {
 	return os.Remove(f.pathToFile)
 }
 
+// Returns a copy of the bytes in the block.
+// If the file had been removed, returns nil
 func (b *Block) Bytes() []byte {
-	return b.mapped
+	b.mutex.RLock()
+	out := make([]byte, len(b.mapped))
+	copy(out, b.mapped)
+	b.mutex.RUnlock()
+
+	return out
 }
 
 func (f *File) allocate() error {
@@ -126,6 +141,7 @@ func (f *File) allocate() error {
 				written: 0,
 				once:    new(sync.Once),
 				err:     nil,
+				mutex:   new(sync.RWMutex),
 			}
 		}
 	})
@@ -161,15 +177,25 @@ func (f *File) GetBlock(blockID int64) (*Block, error) {
 		f.fetchBlock(blockID)
 	})
 
+	block.mutex.RLock()
 	if block.err != nil {
+		block.mutex.RUnlock()
 		return nil, block.err
 	}
+	block.mutex.RUnlock()
 
 	return block, nil
 }
 
 func (f *File) fetchBlock(blockID int64) {
 	block := f.blocks[blockID]
+	block.mutex.Lock()
+	defer block.mutex.Unlock()
+
+	if block.err != nil {
+		return
+	}
+
 	var lastError error
 
 attemptLoop:
