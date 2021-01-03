@@ -208,18 +208,15 @@ attemptLoop:
 			continue
 		}
 
-		offset := block.written
-		for offset < int64(len(block.mapped)) {
+		for block.written < int64(len(block.mapped)) {
 			var n int
-			n, lastError = rd.Read(block.mapped[offset:])
+			n, lastError = rd.Read(block.mapped[block.written:])
 			block.written += int64(n)
-			if lastError != nil {
+			if lastError != nil && block.written < int64(len(block.mapped)) {
 				rd.Close()
 				time.Sleep(time.Second * 3)
 				continue attemptLoop
 			}
-
-			offset += int64(n)
 		}
 
 		block.err = nil
