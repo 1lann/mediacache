@@ -62,7 +62,7 @@ func Open(pathToFile string, blockSize int64, fetcher func(start int64, end int6
 	return file, nil
 }
 
-func (f *File) Remove() error {
+func (f *File) Close() error {
 	f.mutex.Lock()
 	err1 := f.mapping.Unmap()
 	err2 := f.handle.Close()
@@ -82,7 +82,7 @@ func (f *File) Remove() error {
 		return err2
 	}
 
-	return os.Remove(f.pathToFile)
+	return nil
 }
 
 // Returns a copy of the bytes in the block.
