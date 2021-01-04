@@ -168,7 +168,7 @@ func (f *File) IsFailed() error {
 }
 
 func (f *File) GetBlock(blockID int64) (*Block, error) {
-	if blockID >= int64(len(f.blocks)) {
+	if blockID < 0 || blockID >= int64(len(f.blocks)) {
 		return nil, errors.New("mediacache: blockID out of bounds")
 	}
 
@@ -185,6 +185,20 @@ func (f *File) GetBlock(blockID int64) (*Block, error) {
 	block.mutex.RUnlock()
 
 	return block, nil
+}
+
+func (f *File) IsCached(blockID int64) bool {
+	if blockID < 0 || blockID >= int64(len(f.blocks)) {
+		return false
+	}
+
+	block := f.blocks[blockID]
+
+	block.mutex.RLock()
+	loaded := len(block.mapped) > 0
+	block.mutex.RUnlock()
+
+	return loaded
 }
 
 func (f *File) fetchBlock(blockID int64) {
