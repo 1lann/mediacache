@@ -23,6 +23,7 @@ type Block struct {
 	once    *sync.Once
 	err     error
 	mutex   *sync.RWMutex
+	fetched uint32
 }
 
 type File struct {
@@ -193,12 +194,7 @@ func (f *File) IsCached(blockID int64) bool {
 	}
 
 	block := f.blocks[blockID]
-
-	block.mutex.RLock()
-	loaded := len(block.mapped) > 0
-	block.mutex.RUnlock()
-
-	return loaded
+	return atomic.LoadUint32(&block.fetched) != 0
 }
 
 func (f *File) fetchBlock(blockID int64) {
@@ -235,6 +231,8 @@ attemptLoop:
 
 		block.err = nil
 		rd.Close()
+
+		atomic.StoreUint32(&block.fetched, 1)
 
 		return
 	}
